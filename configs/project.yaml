@@ -1,0 +1,21 @@
+stage_read:
+  raw_data_path: "data/raw/Volga-Ural Interfluve, Russia/1000 Cranes. Russia. Volga-Ural Interfluve..csv"
+  stage_1_output_path: "data/interim/irregularly_sampled_data.csv"
+  min_count: 1000
+  max_latitude: 18.5
+
+stage_rw:
+  stage_2_output_path: "data/interim/regularly_sampled_data.csv"
+  time_step_hours: 6
+  gap_split_days: 7
+  min_points: 20
+
+stage_stopover:
+  stage_3_sites_output_path: "data/interim/stopover_sites.csv"
+  stage_3_events_with_sites_output_path: "data/interim/stopover_events.csv"
+  stage_3_site_contributors_output_path: "data/interim/site_contributors.csv"
+  stage_3_stopover_map_output_path: "outputs/stopover_atlas.html"
+  r_stop_km: 10.0
+  min_stop_hours: 48.0
+  site_eps_km: 20
+  min_samples: 2

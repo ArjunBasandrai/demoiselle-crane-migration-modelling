@@ -1,0 +1,67 @@
+references:
+  - type: article
+    title: "Migratory birds modulate niche tradeoffs in rhythm with seasons and life history"
+    authors:
+      - family-names: Yanco
+        given-names: Scott W
+      - family-names: Oliver
+        given-names: Ruth Y
+      - family-names: Iannarilli
+        given-names: Fabiola
+      - family-names: Carlson
+        given-names: Ben S
+      - family-names: Heine
+        given-names: Georg
+      - family-names: Mueller
+        given-names: Uschi
+      - family-names: Richter
+        given-names: Nina
+      - family-names: Vorneweg
+        given-names: Bernd
+      - family-names: Andryushchenko
+        given-names: Yuriy
+      - family-names: Batbayar
+        given-names: Nyambayar
+      - family-names: Dagys
+        given-names: Mindaugas
+      - family-names: Desholm
+        given-names: Mark
+      - family-names: Galtbalt
+        given-names: Batbayar
+      - family-names: Gavrilov
+        given-names: Andrey E
+      - family-names: Goroshko
+        given-names: Oleg A
+      - family-names: Ilyashenko
+        given-names: Elena I
+      - family-names: Ilyashenko
+        given-names: Valentin Yu
+      - family-names: Månsson
+        given-names: Johan
+      - family-names: Mudrik
+        given-names: Elena A
+      - family-names: Natsagdorj
+        given-names: Tseveenmyadag
+      - family-names: Nilsson
+        given-names: Lovisa
+      - family-names: Sherub
+        given-names: Sherub
+      - family-names: Skov
+        given-names: Henrik
+      - family-names: Sukhbaatar
+        given-names: Tuvshintugs
+      - family-names: Zydelis
+        given-names: Ramunas
+      - family-names: Wikelski
+        given-names: Martin
+      - family-names: Jetz
+        given-names: Walter
+      - family-names: Pokrovsky
+        given-names: Ivan
+    journal: "Proceedings of the National Academy of Sciences of the United States of America"
+    year: 2024
+    volume: 121
+    issue: 41
+    page: e2316827121
+    doi: 10.1073/pnas.2316827121
+    url: https://doi.org/10.1073/pnas.2316827121
