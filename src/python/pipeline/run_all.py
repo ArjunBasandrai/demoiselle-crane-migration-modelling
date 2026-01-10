@@ -2,11 +2,12 @@ from .read import read_data
 from .rw import run_random_walk
 from .stopover import extract_stopover_sites
 from .plot import plot_rw_segments_and_stopover_sites_plotly
+from .dbmm import filter_migration_months, run_dynamic_brownian_bridge_movement_model
+
+import yaml
 
 import plotly.io as pio
 pio.renderers.default = "browser"
-
-import yaml
 
 def run_pipeline():
     with open("configs/project.yaml", "r") as f:
@@ -46,5 +47,16 @@ def run_pipeline():
         out_path=stopover_config['stage_3_stopover_map_output_path']
     ).show(config={"scrollZoom": True, "displayModeBar": True})
 
+    # 4. Corridor mapping using dBMM
+    print('Mapping migration corridors...')
+    corridor_config=config['stage_corridor']
+    filter_migration_months(
+        input_csv_path=read_config['stage_1_output_path'],
+        output_csv_path=corridor_config['stage_4_data_output_path'],
+        spring_migration_start_month=corridor_config['spring_migration_start_month'],
+        spring_migration_end_month=corridor_config['spring_migration_end_month'],
+        fall_migration_start_month=corridor_config['fall_migration_start_month'],
+        fall_migration_end_month=corridor_config['fall_migration_end_month']
+    )
 
-
+    run_dynamic_brownian_bridge_movement_model()

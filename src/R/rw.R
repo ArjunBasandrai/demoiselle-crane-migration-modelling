@@ -1,7 +1,3 @@
-# ----------------------------
-# deterministic + single-thread settings
-# Put this BEFORE loading packages to reduce non-determinism from math libs.
-# ----------------------------
 Sys.setenv(
   OMP_NUM_THREADS = "1",
   OPENBLAS_NUM_THREADS = "1",
@@ -10,8 +6,7 @@ Sys.setenv(
   NUMEXPR_NUM_THREADS = "1"
 )
 
-set.seed(123)                 # default seed (overridden below if config provides one)
-RNGkind("Mersenne-Twister")   # explicit RNG kind for stability
+RNGkind("Mersenne-Twister")
 
 library(dplyr)
 library(readr)
@@ -21,15 +16,11 @@ library(ggplot2)
 
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
 
-# ----------------------------
-# config + data load
-# ----------------------------
-
+# Config + data load
 config_data  <- read_yaml("configs/project.yaml")
 dataset_path <- config_data$stage_read$stage_1_output_path
 save_path    <- config_data$stage_rw$stage_2_output_path
 
-# Optional: allow a seed in config: stage_rw: { seed: 123 }
 seed <- config_data$stage_rw$seed %||% 123
 set.seed(seed)
 
@@ -39,18 +30,12 @@ df <- read_csv(
   col_types = cols(timestamp = col_character())
 )
 
-# ----------------------------
-# parameters
-# ----------------------------
+# Parameters
+time_step_hours <- config_data$stage_rw$time_step_hours
+gap_split_days  <- config_data$stage_rw$gap_split_days
+min_points      <- config_data$stage_rw$min_points
 
-time_step_hours <- config_data$stage_rw$time_step_hours   # regularized prediction grid (hours)
-gap_split_days  <- config_data$stage_rw$gap_split_days    # split track if gap exceeds this
-min_points      <- config_data$stage_rw$min_points        # minimum points per segment
-
-# ----------------------------
-# prepare data for foieGras
-# ----------------------------
-
+# FoieGras input prep
 d <- df %>%
   transmute(
     id   = `individual-local-identifier`,
@@ -62,10 +47,7 @@ d <- df %>%
   filter(!is.na(date), !is.na(lon), !is.na(lat)) %>%
   arrange(id, date)
 
-# ----------------------------
-# split tracks at large gaps
-# ----------------------------
-
+# Split tracks on gaps
 d <- d %>%
   group_by(id) %>%
   mutate(
@@ -75,17 +57,13 @@ d <- d %>%
   ) %>%
   ungroup()
 
-# Make seg_ids ordering explicit (stable) to keep downstream list order stable
 seg_ids <- d %>%
   count(seg_id, name = "n") %>%
   filter(n >= min_points) %>%
   arrange(seg_id) %>%
   pull(seg_id)
 
-# ----------------------------
-# RW fitting (safe)
-# ----------------------------
-
+# RW fit (safe)
 safe_fit <- function(di) {
   tryCatch(
     fit_ssm(
@@ -109,34 +87,22 @@ for (i in seq_along(seg_ids)) {
 ok <- !vapply(fits, inherits, logical(1), "error")
 fits_ok <- fits[ok]
 
-# ----------------------------
-# extract predictions
-# ----------------------------
-
+# Predictions
 pred <- bind_rows(lapply(names(fits_ok), function(sid) {
   out <- grab(fits_ok[[sid]], what = "predicted", as_sf = FALSE)
   out$seg_id <- sid
   out
 }))
 
-# ----------------------------
-# consolidate segments back per individual
-# ----------------------------
-
+# Consolidate segments
 final_df <- pred %>%
   select(id, seg_id, date, lon, lat) %>%
   arrange(id, date)
 
-# ----------------------------
-# save final output
-# ----------------------------
-
+# Save output
 write_csv(final_df, save_path)
 
-# ----------------------------
-# plotting function (kept)
-# ----------------------------
-
+# Plot helper
 plot_graph <- function(i) {
   seg_levels <- sort(unique(pred$seg_id))
   seg_choice <- seg_levels[i]

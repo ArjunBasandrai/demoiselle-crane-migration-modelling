@@ -1,6 +1,3 @@
-# stopovers.py
-# Drop-in replacement: stopover events, site clustering, and contributors export (raw df observations)
-
 from __future__ import annotations
 
 import pandas as pd
@@ -8,10 +5,8 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 from typing import Any, Dict, List, Tuple, Union
 
-
 EARTH_RADIUS_KM = 6371.0088
 ArrayLike = Union[float, np.ndarray]
-
 
 def haversine_km(lat1: ArrayLike, lon1: ArrayLike, lat2: ArrayLike, lon2: ArrayLike) -> ArrayLike:
     dlat = lat2 - lat1
@@ -71,7 +66,6 @@ def detect_stopovers_one_segment(
 
     return out
 
-
 def build_stopover_events(
     final_csv_path: str,
     r_stop_km: float = 10.0,
@@ -96,7 +90,6 @@ def build_stopover_events(
     events_df = events_df.sort_values(["id", "start_time"]).reset_index(drop=True)
     events_df.insert(0, "event_id", np.arange(len(events_df), dtype=int))
     return df, events_df
-
 
 def cluster_stopover_sites(
     events_df: pd.DataFrame,
@@ -159,7 +152,6 @@ def cluster_stopover_sites(
 
     return ev.drop(columns=["site_cluster"]), sites_df
 
-
 def build_sites_contributors_df(
     df: pd.DataFrame,
     events_with_sites_df: pd.DataFrame,
@@ -176,7 +168,6 @@ def build_sites_contributors_df(
     if df.empty or events_with_sites_df.empty or sites_df.empty:
         return pd.DataFrame(columns=out_cols)
 
-    # Normalize and keep only raw obs fields
     df2 = df[["id", "seg_id", "date", "lon", "lat"]].copy()
     df2["date"] = pd.to_datetime(df2["date"], utc=True, errors="coerce")
     df2["lon"] = pd.to_numeric(df2["lon"], errors="coerce")
@@ -192,7 +183,6 @@ def build_sites_contributors_df(
 
     site_meta = sites_df.set_index("site_id")[["site_lat", "site_lon", "is_noise_site"]]
 
-    # Pre-group events by (id, seg_id) for fast lookup
     ev_groups: Dict[Tuple[Any, Any], pd.DataFrame] = {
         key: g.reset_index(drop=True) for key, g in ev.groupby(["id", "seg_id"], sort=False)
     }
@@ -244,7 +234,6 @@ def build_sites_contributors_df(
         return pd.DataFrame(columns=out_cols)
 
     return pd.concat(parts, ignore_index=True)
-
 
 def extract_stopover_sites(
     *,

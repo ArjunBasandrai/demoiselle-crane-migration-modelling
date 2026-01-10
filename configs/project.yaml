@@ -19,3 +19,22 @@ stage_stopover:
   min_stop_hours: 48.0
   site_eps_km: 20
   min_samples: 2
+
+stage_corridor:
+  stage_4_data_output_path: "data/interim/irregularly_sampled_migration_only_data.csv"
+  spring_migration_start_month: 3
+  spring_migration_end_month: 6
+  fall_migration_start_month: 8
+  fall_migration_end_month: 11
+
+  proj_crs: "+proj=cea +lon_0=0 +lat_ts=0 +datum=WGS84 +units=m +no_defs"
+  cellsize_m: 5000
+  extent_buffer_m: 250000
+  location_error_m: 30
+  window_size: 31
+  margin: 11
+  time_step_mins: 60
+  max_points_plot: 200000
+  out_html: "outputs/corridors.html"
+  out_gj95: "outputs/corridor_95.geojson"
+  out_gj50: "outputs/corridor_50.geojson"
