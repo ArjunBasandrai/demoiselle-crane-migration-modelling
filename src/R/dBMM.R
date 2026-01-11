@@ -32,7 +32,7 @@ write_tmp <- function(r) {
 }
 
 cat('Segmenting data...\n')
-input_path <- dbmm_config$stage_4_data_output_path
+input_path <- dbmm_config$stage_4_migration_only_output_path
 
 gap_split_days <- config_data$stage_rw$gap_split_days
 min_points <- config_data$stage_rw$min_points

@@ -20,8 +20,36 @@ stage_stopover:
   site_eps_km: 20
   min_samples: 2
 
+stage_phenology:
+  plots_out_dir: "outputs/phenology"
+  stage_4_migrations_output_path: "outputs/phenology/migrations.csv"
+  stage_4_individuals_output_path: "outputs/phenology/individuals_summary.csv"
+  stage_4_population_output_path: "outputs/phenology/population_summary.csv"
+
+  core_radius_km: 300.0
+  winter_months: [12, 1, 2]
+  breeding_months: [5, 6, 7, 8]
+  min_points_winter: 10
+  min_points_breeding: 10
+
+  major_stopover_hours: 48.0
+  gap_split_days: 7.0
+
+  spring_arrival_start_month_day: [4, 1]
+  spring_arrival_end_month_day: [9, 30]
+  spring_departure_start_month_day: [7, 1]
+  spring_departure_end_month_day: [11, 15]
+
+  fall_departure_start_month_day: [12, 1]
+  fall_departure_end_month_day: [4, 15]
+  fall_arrival_start_month_day: [8, 15]
+  fall_arrival_end_month_day: [12, 31]
+
+  plots_dpi: 180
+  max_points_scatter: 20000
+
 stage_corridor:
-  stage_4_data_output_path: "data/interim/irregularly_sampled_migration_only_data.csv"
+  stage_4_migration_only_output_path: "data/interim/irregularly_sampled_migration_only_data.csv"
   spring_migration_start_month: 3
   spring_migration_end_month: 6
   fall_migration_start_month: 8
