@@ -12,91 +12,6 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.geodesic import Geodesic
-
-
-def plot_core_circle_and_raw_obs(
-    *,
-    raw_csv_path: str = "data/interim/regularly_sampled_data.csv",
-    bird_id: str,
-    core_lat: float,
-    core_lon: float,
-    core_radius_km: float,
-    max_points: int | None = None,
-):
-    df = pd.read_csv(raw_csv_path)
-    df = df.rename(columns={
-        "individual-local-identifier": "id",
-        "timestamp": "date",
-        "location-long": "lon",
-        "location-lat": "lat",
-    })
-
-    df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
-    df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
-    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
-
-    d = (
-        df.loc[df["id"].astype(str) == str(bird_id), ["date", "lon", "lat"]]
-        .dropna(subset=["date", "lon", "lat"])
-        .sort_values("date")
-    )
-
-    if d.empty:
-        raise ValueError(f"No raw points found for bird_id={bird_id}")
-
-    if max_points is not None and len(d) > max_points:
-        d = d.sample(n=max_points, random_state=0).sort_values("date")
-
-    proj = ccrs.PlateCarree()
-    fig = plt.figure(figsize=(9.5, 7.5))
-    ax = plt.axes(projection=proj)
-
-    ax.add_feature(cfeature.LAND, facecolor="white")
-    ax.add_feature(cfeature.BORDERS, linewidth=0.6)
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.6)
-
-    # Raw observations
-    ax.scatter(
-        d["lon"].to_numpy(),
-        d["lat"].to_numpy(),
-        s=8,
-        alpha=0.55,
-        transform=proj,
-        label="Raw fixes",
-    )
-
-    # Core center
-    ax.scatter(
-        [core_lon],
-        [core_lat],
-        s=60,
-        marker="x",
-        linewidths=2,
-        transform=proj,
-        label="Core center",
-    )
-
-    # Geodesic circle (radius in meters)
-    circle = Geodesic().circle(lon=core_lon, lat=core_lat, radius=core_radius_km * 1000.0, n_samples=240)
-    ax.plot(circle[:, 0], circle[:, 1], linewidth=2, transform=proj, label=f"Core radius = {core_radius_km} km")
-
-    # Set view window around the circle + points (simple, robust)
-    lon_min = float(np.nanmin(np.r_[d["lon"].to_numpy(), circle[:, 0]]))
-    lon_max = float(np.nanmax(np.r_[d["lon"].to_numpy(), circle[:, 0]]))
-    lat_min = float(np.nanmin(np.r_[d["lat"].to_numpy(), circle[:, 1]]))
-    lat_max = float(np.nanmax(np.r_[d["lat"].to_numpy(), circle[:, 1]]))
-
-    pad_lon = max(0.5, 0.10 * (lon_max - lon_min))
-    pad_lat = max(0.5, 0.10 * (lat_max - lat_min))
-    ax.set_extent([lon_min - pad_lon, lon_max + pad_lon, lat_min - pad_lat, lat_max + pad_lat], crs=proj)
-
-    ax.set_title(f"{bird_id} · Raw fixes + core circle")
-    ax.legend(loc="upper right")
-    plt.show()
-
 EARTH_RADIUS_KM = 6371.0088
 
 def _to_utc(ts: pd.Series) -> pd.Series:
@@ -335,8 +250,6 @@ def compute_phenology(
                 wlon = float(winter_map.loc[(pid, y), "winter_lon"])
                 blat = float(breed_map.loc[(pid, y), "breed_lat"])
                 blon = float(breed_map.loc[(pid, y), "breed_lon"])
-
-                plot_core_circle_and_raw_obs(bird_id=pid, core_lat=wlat, core_lon=wlon, core_radius_km=core_radius_km, max_points=20000)
 
                 dep = _last_within(
                     df_id,
