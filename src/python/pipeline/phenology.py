@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable, Any
 
 import matplotlib
 # matplotlib.use("Agg")
 
+from shapely.geometry import MultiPoint, Point
+from shapely.ops import transform
+from shapely.geometry.base import BaseGeometry
+import pyproj
+
 import matplotlib.pyplot as plt
 import seaborn as sns
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 import numpy as np
 import pandas as pd
+from sklearn.neighbors import BallTree
+
+XYTransform = Callable[[Any, Any], Tuple[Any, Any]]
 
 EARTH_RADIUS_KM = 6371.0088
 
@@ -36,6 +46,146 @@ def _calculate_overlap_hours(a_start, a_end, b_start, b_end) -> float:
     if pd.isna(s) or pd.isna(e) or e <= s:
         return 0.0
     return (e - s).total_seconds() / 3600.0
+
+def _expand_year_season_events_connected_to_bird(
+    year_season_events: pd.DataFrame,
+    pid: int,
+    link_radius_km: float,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    if link_radius_km <= 0:
+        raise ValueError("link_radius_km must be > 0")
+
+    df = year_season_events.copy()
+
+    n = len(df)
+    if n == 0:
+        return df, df
+
+    seed_idx = np.flatnonzero(df["id"] == pid)
+    if seed_idx.size == 0:
+        return df.iloc[0:0].copy(), df.iloc[0:0].copy()
+
+    coords_rad = np.radians(df[["centroid_lat", "centroid_lon"]].to_numpy(dtype=float))
+    tree = BallTree(coords_rad, metric="haversine")
+    r_rad = float(link_radius_km) / EARTH_RADIUS_KM
+
+    visited = np.zeros(n, dtype=bool)
+    visited[seed_idx] = True
+
+    queue = seed_idx.tolist()
+    while queue:
+        i = queue.pop()
+        neigh = tree.query_radius(coords_rad[i : i + 1], r=r_rad, return_distance=False)[0]
+        if neigh.size == 0:
+            continue
+        new = neigh[~visited[neigh]]
+        if new.size:
+            visited[new] = True
+            queue.extend(new.tolist())
+
+    return df.loc[seed_idx].reset_index(drop=True), df.loc[visited].reset_index(drop=True)
+
+def _create_hull(
+    lats: np.ndarray | pd.Series,
+    lons: np.ndarray | pd.Series,
+    margin_km: float = 0.0
+) -> Tuple[XYTransform, BaseGeometry, pyproj.CRS]:
+    _EPS = 1e-10
+
+    def _dist(a, b):
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        return (dx * dx + dy * dy) ** 0.5
+
+    def _is_in_circle(c, p):
+        cx, cy, r = c
+        dx = p[0] - cx
+        dy = p[1] - cy
+        return (dx * dx + dy * dy) <= (r * r + _EPS)
+
+    def _circle_two_points(a, b):
+        cx = (a[0] + b[0]) / 2.0
+        cy = (a[1] + b[1]) / 2.0
+        r = _dist(a, b) / 2.0
+        return (cx, cy, r)
+
+    def _circle_three_points(a, b, c):
+        ax, ay = a
+        bx, by = b
+        cx, cy = c
+        d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+        if abs(d) < _EPS:
+            return None
+        a2 = ax * ax + ay * ay
+        b2 = bx * bx + by * by
+        c2 = cx * cx + cy * cy
+        ux = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d
+        uy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d
+        r = ((ux - ax) ** 2 + (uy - ay) ** 2) ** 0.5
+        return (ux, uy, r)
+
+    def _min_enclosing_circle(points):
+        pts = points.copy()
+        rng = np.random.default_rng(0)
+        rng.shuffle(pts)
+
+        c = None
+        for i, p in enumerate(pts):
+            if c is not None and _is_in_circle(c, p):
+                continue
+            c = (p[0], p[1], 0.0)
+            for j in range(i):
+                q = pts[j]
+                if _is_in_circle(c, q):
+                    continue
+                c = _circle_two_points(p, q)
+                for k in range(j):
+                    r = pts[k]
+                    if _is_in_circle(c, r):
+                        continue
+                    cc = _circle_three_points(p, q, r)
+                    if cc is None:
+                        dists = [(_dist(p, q), (p, q)), (_dist(p, r), (p, r)), (_dist(q, r), (q, r))]
+                        _, (u, v) = max(dists, key=lambda x: x[0])
+                        c = _circle_two_points(u, v)
+                    else:
+                        c = cc
+        return c  # (cx, cy, radius)
+
+    lats = np.asarray(lats, dtype=float)
+    lons = np.asarray(lons, dtype=float)
+
+    lat0 = float(lats.mean())
+    lon0 = float(lons.mean())
+
+    crs_src = pyproj.CRS("EPSG:4326")
+    crs_dst = pyproj.CRS.from_proj4(
+        f"+proj=aeqd +lat_0={lat0} +lon_0={lon0} +datum=WGS84 +units=m +no_defs"
+    )
+    transformer = pyproj.Transformer.from_crs(crs_src, crs_dst, always_xy=True)
+    to_xy = transformer.transform
+
+    xs, ys = to_xy(lons, lats)
+    pts_xy = np.column_stack([xs, ys])
+
+    if len(pts_xy) == 0:
+        circle_xy = Point(0, 0).buffer(0)
+        return to_xy, circle_xy, crs_dst
+
+    cx, cy, r = _min_enclosing_circle(pts_xy)
+    r = r + (margin_km * 1000.0 if margin_km > 0 else 0.0)
+    circle_xy = Point(cx, cy).buffer(r)
+
+    return to_xy, circle_xy, crs_dst
+
+def _inside_hull(
+    to_xy: XYTransform,
+    hull: BaseGeometry,
+    lat: float,
+    lon: float
+) -> bool:
+    p_xy = transform(to_xy, Point(lon, lat))
+    return hull.covers(p_xy)
 
 def read_rw_track(rw_csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(rw_csv_path)
@@ -200,25 +350,182 @@ def _migration_step_stats(points: pd.DataFrame, *, gap_split_days: float) -> dic
         mean_step_speed_kmph=float(np.nanmean(speed)) if np.any(np.isfinite(speed)) else np.nan,
     )
 
+def first_confirmed_entry_day(
+    track_df: pd.DataFrame,
+    cutoff_timestamp: pd.Timestamp,
+    is_inside: pd.Series
+) -> None | int:
+    df = track_df.copy()
+    is_inside = pd.Series(is_inside, index=df.index).astype(bool)
+
+    # Cutoff Trimming
+    cutoff_mask = df['date'] >= cutoff_timestamp
+    df, timestamps, is_inside = df.loc[cutoff_mask], df['date'].loc[cutoff_mask], is_inside.loc[cutoff_mask]
+    if df.empty:
+        return None
+        
+    # Group by day
+    day = timestamps.dt.floor('D')
+    day_inside = is_inside.groupby(day).any()
+    if not day_inside.any():
+        return None
+    
+    # Entry detection
+    entry_day = day_inside.index[day_inside.values.argmax()]
+    return entry_day
+    
+def first_confirmed_exit_day(
+    track_df: pd.DataFrame,
+    cutoff_timestamp: pd.Timestamp,
+    departure_confirm_days: int, 
+    is_inside: pd.Series
+) -> None | int:
+    df = track_df.copy()
+    is_inside = pd.Series(is_inside, index=df.index).astype(bool)
+
+    # Cutoff Trimming
+    cutoff_mask = df['date'] >= cutoff_timestamp
+    df, timestamps, is_inside = df.loc[cutoff_mask], df['date'].loc[cutoff_mask], is_inside.loc[cutoff_mask]
+    if df.empty:
+        return None
+        
+    # Group by day
+    day = timestamps.dt.floor('D')
+    day_inside = is_inside.groupby(day).any()
+    if not day_inside.any():
+        return None
+    
+    # Entry detection
+    entry_day = day_inside.index[day_inside.values.argmax()]
+    post_entry_days = day_inside.loc[entry_day:].index
+    day_inside = day_inside.loc[post_entry_days]
+    day_outside = ~day_inside
+
+    # Exit detection
+    run = 0
+    exit_day = None
+    for d, out in day_outside.items():
+        if out:
+            run += 1
+            if run == 1:
+                exit_day = d
+            if run >= departure_confirm_days:
+                break
+        else:
+            run = 0
+            exit_day = None
+    
+    if run < departure_confirm_days:
+        return None
+
+    return exit_day
+
+def plot_hull_xy(hull_xy, crs_dst, ax=None):
+    from_xy = pyproj.Transformer.from_crs(crs_dst, "EPSG:4326", always_xy=True).transform
+    hull_ll = transform(from_xy, hull_xy)
+    if ax is None:
+        _, ax = plt.subplots()
+
+    geoms = getattr(hull_ll, "geoms", [hull_ll])
+
+    for g in geoms:
+        if g.geom_type != "Polygon":
+            continue
+
+        c = np.asarray(g.exterior.coords)  # (lon, lat)
+        ax.fill(c[:, 0], c[:, 1], color="orange", alpha=0.5, edgecolor="orange")
+
+        for hole in g.interiors:
+            h = np.asarray(hole.coords)
+            ax.fill(h[:, 0], h[:, 1], color="white", alpha=1.0, edgecolor="white")
+
+    ax.set_xlabel("lon")
+    ax.set_ylabel("lat")
+    ax.grid(True)
+    return ax
+
+def _plot_bird_hull_observations(
+    hull_xy_summer: BaseGeometry,
+    hull_xy_winter: BaseGeometry,
+    crs_dst_summer: XYTransform,
+    crs_dst_winter: XYTransform,
+    bird_year_summer_events: pd.DataFrame,
+    bird_year_winter_events: pd.DataFrame,
+    bird_year_observations: pd.DataFrame,
+    bird_id: str,
+    year: int
+):
+    fig_w, fig_h = 12, 12
+    plt.figure(figsize=(fig_w, fig_h))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.add_feature(cfeature.LAND, facecolor="white")
+    ax.add_feature(cfeature.BORDERS, linewidth=0.6)
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.6)
+
+    plot_hull_xy(hull_xy_summer, crs_dst_summer, ax)
+    plot_hull_xy(hull_xy_winter, crs_dst_winter, ax)
+
+    sns.scatterplot(
+        data=bird_year_observations,
+        x='lon',
+        y='lat',
+        s=8,
+        ax=ax,
+        transform=ccrs.PlateCarree()
+    )
+    sns.scatterplot(
+        data=bird_year_winter_events,
+        x='centroid_lon',
+        y='centroid_lat',
+        s=48,
+        ax=ax,
+        transform=ccrs.PlateCarree()
+    )
+    sns.scatterplot(
+        data=bird_year_summer_events,
+        x='centroid_lon',
+        y='centroid_lat',
+        s=48,
+        ax=ax,
+        transform=ccrs.PlateCarree()
+    )
+    xmin, xmax = bird_year_observations["lon"].min(), bird_year_observations["lon"].max()
+    ymin, ymax = bird_year_observations["lat"].min(), bird_year_observations["lat"].max()
+    lat_margin, lon_margin = 5, 5
+
+    lat_span = (ymax - ymin) + 2 * lat_margin
+    lon_span = (xmax - xmin) + 2 * lon_margin
+    target_ratio = fig_w / fig_h
+    if lon_span < lat_span * target_ratio:
+        extra = (lat_span * target_ratio - lon_span) / 2
+        lon_margin += extra
+
+    ax.set_extent(
+        [xmin - lon_margin, xmax + lon_margin, ymin - lat_margin, ymax + lat_margin],
+        crs=ccrs.PlateCarree(),
+    )
+
+    ax.set_title(f"Hull and Observations for Bird {bird_id} in the year {year}")
+
+    plt.show()
+
 def compute_phenology(
     track: pd.DataFrame,
     events: pd.DataFrame,
     *,
-    core_radius_km: float,
+    hull_margin_km: float,
     winter_months: Tuple[int, ...],
     breeding_months: Tuple[int, ...],
     min_points_winter: int,
     min_points_breeding: int,
     major_stopover_hours: float,
     gap_split_days: float,
-    spring_arrival_start_month_day: Tuple[int, int],
-    spring_arrival_end_month_day: Tuple[int, int],
-    spring_departure_start_month_day: Tuple[int, int],
-    spring_departure_end_month_day: Tuple[int, int],
-    fall_departure_start_month_day: Tuple[int, int],
-    fall_departure_end_month_day: Tuple[int, int],
-    fall_arrival_start_month_day: Tuple[int, int],
-    fall_arrival_end_month_day: Tuple[int, int],
+    winter_start_month_day: Tuple[int, int],
+    winter_end_month_day: Tuple[int, int],
+    summer_start_month_day: Tuple[int, int],
+    summer_end_month_day: Tuple[int, int],
+    departure_confirm_days: int,
+    link_radius_km: int,
 ) -> pd.DataFrame:
     winter_c, breed_c = compute_seasonal_centroids(
         track,
@@ -227,9 +534,6 @@ def compute_phenology(
         min_points_winter=min_points_winter,
         min_points_breeding=min_points_breeding,
     )
-
-    winter_map = winter_c.set_index(["id", "season_year"])
-    breed_map = breed_c.set_index(["id", "season_year"])
 
     out_rows = []
 
@@ -245,38 +549,71 @@ def compute_phenology(
         ev_id = events[events["id"] == pid].copy()
 
         for y in years:
-            if (pid, y) in winter_map.index and (pid, y) in breed_map.index:
-                wlat = float(winter_map.loc[(pid, y), "winter_lat"])
-                wlon = float(winter_map.loc[(pid, y), "winter_lon"])
-                blat = float(breed_map.loc[(pid, y), "breed_lat"])
-                blon = float(breed_map.loc[(pid, y), "breed_lon"])
+            bird_year_summer_events, bird_year_summer_events_expanded = _expand_year_season_events_connected_to_bird(
+                events.loc[
+                    (
+                        (events['start_time'].dt.year == y) | 
+                        (events['end_time'].dt.year == y)
+                    ) &
+                    (events['start_time'].between(_ts(y, summer_start_month_day), _ts(y, summer_end_month_day))) &
+                    (events['end_time'].between(_ts(y, summer_start_month_day), _ts(y, summer_end_month_day)))
+                ].reset_index(drop=True),
+                pid,
+                link_radius_km
+            )
+            bird_year_winter_events, bird_year_winter_events_expanded = _expand_year_season_events_connected_to_bird(
+                events.loc[
+                    (events['id'] == pid) &
+                    (
+                        (events['start_time'].dt.year.between(y - 1, y)) | 
+                        (events['end_time'].dt.year.between(y - 1, y))
+                    ) &
+                    (events['start_time'].between(_ts(y - 1, winter_start_month_day), _ts(y, winter_end_month_day))) &
+                    (events['end_time'].between(_ts(y - 1, winter_start_month_day), _ts(y, winter_end_month_day)))
+                ].reset_index(drop=True),
+                pid,
+                link_radius_km
+            )
+            bird_next_year_winter_events, bird_next_year_winter_events_expanded  = _expand_year_season_events_connected_to_bird(
+                events.loc[
+                    (events['id'] == pid) &
+                    (
+                        (events['start_time'].dt.year.between(y, y + 1)) | 
+                        (events['end_time'].dt.year.between(y, y + 1))
+                    ) &
+                    (events['start_time'].between(_ts(y, winter_start_month_day), _ts(y + 1, winter_end_month_day))) &
+                    (events['end_time'].between(_ts(y, winter_start_month_day), _ts(y + 1, winter_end_month_day)))
+                ].reset_index(drop=True),
+                pid,
+                link_radius_km
+            )
 
-                dep = _last_within(
-                    df_id,
-                    wlat,
-                    wlon,
-                    core_radius_km,
-                    _ts(y - 1, fall_departure_start_month_day),
-                    _ts(y, fall_departure_end_month_day),
+            # Spring Migration
+            if len(bird_year_summer_events_expanded) > 0 and len(bird_year_winter_events_expanded) > 0:
+                bird_year_observations = df_id[df_id['date'].dt.year == y]
+                to_xy_summer, hull_xy_summer, crs_dst_summer = _create_hull(
+                    bird_year_summer_events_expanded['centroid_lat'],
+                    bird_year_summer_events_expanded['centroid_lon'],
+                    margin_km=hull_margin_km
                 )
-                arr = None
-                if dep is not None:
-                    arr = _first_within(
-                        df_id,
-                        blat,
-                        blon,
-                        core_radius_km,
-                        max(dep, _ts(y, spring_arrival_start_month_day)),
-                        _ts(y, spring_arrival_end_month_day),
-                    )
+                to_xy_winter, hull_xy_winter, crs_dst_winter = _create_hull(
+                    bird_year_winter_events_expanded['centroid_lat'],
+                    bird_year_winter_events_expanded['centroid_lon'],
+                    margin_km=hull_margin_km
+                )
+                is_inside_summer = bird_year_observations.apply(lambda r: _inside_hull(to_xy_summer, hull_xy_summer, r['lat'], r['lon']), axis=1)
+                is_inside_winter = bird_year_observations.apply(lambda r: _inside_hull(to_xy_winter, hull_xy_winter, r['lat'], r['lon']), axis=1)
 
-                if dep is not None and arr is not None and arr > dep:
-                    pts = df_id[(df_id["date"] >= dep) & (df_id["date"] <= arr)].copy()
-                    dur_h = (arr - dep).total_seconds() / 3600.0
+                winter_departure_day = first_confirmed_exit_day(bird_year_observations, _ts(y - 1, winter_start_month_day), departure_confirm_days, is_inside_winter)
+                summer_arrival_day = first_confirmed_entry_day(bird_year_observations, _ts(y, summer_start_month_day), is_inside_summer)
 
-                    ev_win = ev_id[(ev_id["end_time"] >= dep) & (ev_id["start_time"] <= arr)].copy()
+                if winter_departure_day is not None and summer_arrival_day is not None and summer_arrival_day > winter_departure_day:
+                    pts = df_id[(df_id["date"] >= winter_departure_day) & (df_id["date"] <= summer_arrival_day)].copy()
+                    dur_h = (summer_arrival_day - winter_departure_day).total_seconds() / 3600.0
+
+                    ev_win = ev_id[(ev_id["end_time"] >= winter_departure_day) & (ev_id["start_time"] <= summer_arrival_day)].copy()
                     overlap_h = np.array(
-                        [_calculate_overlap_hours(dep, arr, s, e) for s, e in zip(ev_win["start_time"], ev_win["end_time"])],
+                        [_calculate_overlap_hours(winter_departure_day, summer_arrival_day, s, e) for s, e in zip(ev_win["start_time"], ev_win["end_time"])],
                         dtype=float,
                     )
                     stop_h = float(np.nansum(overlap_h)) if overlap_h.size else 0.0
@@ -299,8 +636,8 @@ def compute_phenology(
                             id=pid,
                             season="spring",
                             season_year=y,
-                            departure_time=dep,
-                            arrival_time=arr,
+                            departure_time=winter_departure_day,
+                            arrival_time=summer_arrival_day,
                             duration_days=float(dur_h / 24.0),
                             stopover_hours=stop_h,
                             travel_hours=travel_h,
@@ -312,47 +649,39 @@ def compute_phenology(
                         )
                     )
 
-            if (pid, y) in breed_map.index and (pid, y + 1) in winter_map.index:
-                blat = float(breed_map.loc[(pid, y), "breed_lat"])
-                blon = float(breed_map.loc[(pid, y), "breed_lon"])
-                wlat = float(winter_map.loc[(pid, y + 1), "winter_lat"])
-                wlon = float(winter_map.loc[(pid, y + 1), "winter_lon"])
-
-                dep = _last_within(
-                    df_id,
-                    blat,
-                    blon,
-                    core_radius_km,
-                    _ts(y, spring_departure_start_month_day),
-                    _ts(y, spring_departure_end_month_day),
+            # Fall Migration
+            if len(bird_year_summer_events_expanded) > 0 and len(bird_next_year_winter_events_expanded) > 0:
+                bird_year_observations = df_id[df_id['date'].dt.year == y]
+                to_xy_summer, hull_xy_summer, crs_dst_summer = _create_hull(
+                    bird_year_summer_events_expanded['centroid_lat'],
+                    bird_year_summer_events_expanded['centroid_lon'],
+                    margin_km=hull_margin_km
                 )
-                arr = None
-                if dep is not None:
-                    arr = _first_within(
-                        df_id,
-                        wlat,
-                        wlon,
-                        core_radius_km,
-                        max(dep, _ts(y, fall_arrival_start_month_day)),
-                        _ts(y + 1, fall_arrival_end_month_day),
-                    )
+                to_xy_winter, hull_xy_winter, crs_dst_winter = _create_hull(
+                    bird_next_year_winter_events_expanded['centroid_lat'],
+                    bird_next_year_winter_events_expanded['centroid_lon'],
+                    margin_km=hull_margin_km
+                )
+                is_inside_summer = bird_year_observations.apply(lambda r: _inside_hull(to_xy_summer, hull_xy_summer, r['lat'], r['lon']), axis=1)
+                is_inside_winter = bird_year_observations.apply(lambda r: _inside_hull(to_xy_winter, hull_xy_winter, r['lat'], r['lon']), axis=1)
 
-                if dep is not None and arr is not None and arr > dep:
-                    pts = df_id[(df_id["date"] >= dep) & (df_id["date"] <= arr)].copy()
-                    dur_h = (arr - dep).total_seconds() / 3600.0
+                summer_departure_day = first_confirmed_exit_day(bird_year_observations, _ts(y, summer_start_month_day), departure_confirm_days, is_inside_summer)
+                winter_arrival_day = first_confirmed_entry_day(bird_year_observations, _ts(y, winter_start_month_day), is_inside_winter)
 
-                    ev_win = ev_id[(ev_id["end_time"] >= dep) & (ev_id["start_time"] <= arr)].copy()
+                if summer_departure_day is not None and winter_arrival_day is not None and winter_arrival_day > summer_departure_day:
+                    pts = df_id[(df_id["date"] >= summer_departure_day) & (df_id["date"] <= winter_arrival_day)].copy()
+                    dur_h = (winter_arrival_day - summer_departure_day).total_seconds() / 3600.0
+
+                    ev_win = ev_id[(ev_id["end_time"] >= summer_departure_day) & (ev_id["start_time"] <= winter_arrival_day)].copy()
                     overlap_h = np.array(
-                        [_calculate_overlap_hours(dep, arr, s, e) for s, e in zip(ev_win["start_time"], ev_win["end_time"])],
+                        [_calculate_overlap_hours(summer_departure_day, winter_arrival_day, s, e) for s, e in zip(ev_win["start_time"], ev_win["end_time"])],
                         dtype=float,
                     )
                     stop_h = float(np.nansum(overlap_h)) if overlap_h.size else 0.0
                     n_stop = int(len(ev_win))
                     n_major = int(np.sum(ev_win["duration_hours"].to_numpy(float) >= major_stopover_hours))
 
-                    n_sites = np.nan
-                    if "site_id" in ev_win.columns:
-                        n_sites = int(pd.Series(ev_win["site_id"]).dropna().nunique())
+                    n_sites = int(pd.Series(ev_win["site_id"]).dropna().nunique())
 
                     step_stats = _migration_step_stats(pts, gap_split_days=gap_split_days)
 
@@ -368,8 +697,8 @@ def compute_phenology(
                             id=pid,
                             season="fall",
                             season_year=y,
-                            departure_time=dep,
-                            arrival_time=arr,
+                            departure_time=summer_departure_day,
+                            arrival_time=winter_arrival_day,
                             duration_days=float(dur_h / 24.0),
                             stopover_hours=stop_h,
                             travel_hours=travel_h,
@@ -387,6 +716,7 @@ def compute_phenology(
     mig = pd.DataFrame(out_rows).sort_values(["id", "season", "season_year"]).reset_index(drop=True)
     mig["departure_doy"] = mig["departure_time"].dt.dayofyear.astype(int)
     mig["arrival_doy"] = mig["arrival_time"].dt.dayofyear.astype(int)
+    # print(mig)
     return mig
 
 def summarize_individuals(mig: pd.DataFrame) -> pd.DataFrame:
@@ -431,21 +761,19 @@ def run_phenology(
     out_migrations_csv_path: str,
     out_individuals_csv_path: str,
     out_population_csv_path: str,
-    core_radius_km: float,
+    hull_margin_km: float,
     winter_months: Tuple[int, ...],
     breeding_months: Tuple[int, ...],
     min_points_winter: int,
     min_points_breeding: int,
     major_stopover_hours: float,
     gap_split_days: float,
-    spring_arrival_start_month_day: Tuple[int, int],
-    spring_arrival_end_month_day: Tuple[int, int],
-    spring_departure_start_month_day: Tuple[int, int],
-    spring_departure_end_month_day: Tuple[int, int],
-    fall_departure_start_month_day: Tuple[int, int],
-    fall_departure_end_month_day: Tuple[int, int],
-    fall_arrival_start_month_day: Tuple[int, int],
-    fall_arrival_end_month_day: Tuple[int, int],
+    winter_start_month_day: Tuple[int, int],
+    winter_end_month_day: Tuple[int, int],
+    summer_start_month_day: Tuple[int, int],
+    summer_end_month_day: Tuple[int, int],
+    departure_confirm_days: int,
+    link_radius_km: int,
 ) -> None:
     track = read_rw_track(rw_csv_path)
     events = read_stopover_events(stopover_events_csv_path)
@@ -453,21 +781,19 @@ def run_phenology(
     mig = compute_phenology(
         track,
         events,
-        core_radius_km=core_radius_km,
+        hull_margin_km=hull_margin_km,
         winter_months=winter_months,
         breeding_months=breeding_months,
         min_points_winter=min_points_winter,
         min_points_breeding=min_points_breeding,
         major_stopover_hours=major_stopover_hours,
         gap_split_days=gap_split_days,
-        spring_arrival_start_month_day=spring_arrival_start_month_day,
-        spring_arrival_end_month_day=spring_arrival_end_month_day,
-        spring_departure_start_month_day=spring_departure_start_month_day,
-        spring_departure_end_month_day=spring_departure_end_month_day,
-        fall_departure_start_month_day=fall_departure_start_month_day,
-        fall_departure_end_month_day=fall_departure_end_month_day,
-        fall_arrival_start_month_day=fall_arrival_start_month_day,
-        fall_arrival_end_month_day=fall_arrival_end_month_day,
+        winter_start_month_day=winter_start_month_day,
+        winter_end_month_day=winter_end_month_day,
+        summer_start_month_day=summer_start_month_day,
+        summer_end_month_day=summer_end_month_day,
+        departure_confirm_days=departure_confirm_days,
+        link_radius_km=link_radius_km
     )
 
     ind = summarize_individuals(mig)
@@ -507,13 +833,11 @@ def _read_phenology_outputs(
 
     return mig, ind, pop
 
-
 def _save_fig(path: Path, dpi: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(path, dpi=dpi, bbox_inches="tight")
     plt.close()
-
 
 def visualize_phenology_outputs(
     *,
@@ -533,6 +857,8 @@ def visualize_phenology_outputs(
         out.mkdir(parents=True, exist_ok=True)
         (out / "README.txt").write_text("No migration episodes found in migrations.csv\n", encoding="utf-8")
         return
+    
+    mig = mig.sort_values(["season"])
 
     mig_scatter = mig.copy()
     if len(mig_scatter) > max_points_scatter:

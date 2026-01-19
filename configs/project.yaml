@@ -26,7 +26,7 @@ stage_phenology:
   stage_4_individuals_output_path: "outputs/phenology/individuals_summary.csv"
   stage_4_population_output_path: "outputs/phenology/population_summary.csv"
 
-  core_radius_km: 300.0
+  hull_margin_km: 50.0
   winter_months: [12, 1, 2]
   breeding_months: [5, 6, 7, 8]
   min_points_winter: 10
@@ -35,15 +35,12 @@ stage_phenology:
   major_stopover_hours: 48.0
   gap_split_days: 7.0
 
-  spring_arrival_start_month_day: [4, 1]
-  spring_arrival_end_month_day: [9, 30]
-  spring_departure_start_month_day: [7, 1]
-  spring_departure_end_month_day: [11, 15]
-
-  fall_departure_start_month_day: [12, 1]
-  fall_departure_end_month_day: [4, 15]
-  fall_arrival_start_month_day: [8, 15]
-  fall_arrival_end_month_day: [12, 31]
+  winter_start_month_day: [11, 1]
+  winter_end_month_day: [2, 1]
+  summer_start_month_day: [4, 30]
+  summer_end_month_day: [7, 31]
+  departure_confirm_days: 21
+  link_radius_km: 500
 
   plots_dpi: 180
   max_points_scatter: 20000

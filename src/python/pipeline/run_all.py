@@ -50,29 +50,26 @@ def run_pipeline():
 
     # 4. Phenology
     print("Computing migration phenology...")
-    phenology_config = config.get("stage_phenology") or config.get("stage_pheonology")
-
+    phenology_config = config["stage_phenology"]
     run_phenology(
         rw_csv_path=config["stage_rw"]["stage_2_output_path"],
         stopover_events_csv_path=stopover_config["stage_3_events_with_sites_output_path"],
         out_migrations_csv_path=phenology_config["stage_4_migrations_output_path"],
         out_individuals_csv_path=phenology_config["stage_4_individuals_output_path"],
         out_population_csv_path=phenology_config["stage_4_population_output_path"],
-        core_radius_km=float(phenology_config["core_radius_km"]),
+        hull_margin_km=float(phenology_config["hull_margin_km"]),
         winter_months=tuple(phenology_config["winter_months"]),
         breeding_months=tuple(phenology_config["breeding_months"]),
         min_points_winter=int(phenology_config["min_points_winter"]),
         min_points_breeding=int(phenology_config["min_points_breeding"]),
         major_stopover_hours=float(phenology_config["major_stopover_hours"]),
         gap_split_days=float(phenology_config["gap_split_days"]),
-        spring_arrival_start_month_day=tuple(phenology_config["spring_arrival_start_month_day"]),
-        spring_arrival_end_month_day=tuple(phenology_config["spring_arrival_end_month_day"]),
-        spring_departure_start_month_day=tuple(phenology_config["spring_departure_start_month_day"]),
-        spring_departure_end_month_day=tuple(phenology_config["spring_departure_end_month_day"]),
-        fall_departure_start_month_day=tuple(phenology_config["fall_departure_start_month_day"]),
-        fall_departure_end_month_day=tuple(phenology_config["fall_departure_end_month_day"]),
-        fall_arrival_start_month_day=tuple(phenology_config["fall_arrival_start_month_day"]),
-        fall_arrival_end_month_day=tuple(phenology_config["fall_arrival_end_month_day"]),
+        winter_start_month_day=tuple(phenology_config["winter_start_month_day"]),
+        winter_end_month_day=tuple(phenology_config["winter_end_month_day"]),
+        summer_start_month_day=tuple(phenology_config["summer_start_month_day"]),
+        summer_end_month_day=tuple(phenology_config["summer_end_month_day"]),
+        departure_confirm_days=phenology_config['departure_confirm_days'],
+        link_radius_km=phenology_config['link_radius_km']
     )
 
     visualize_phenology_outputs(
