@@ -51,8 +51,6 @@ def run_pipeline():
     if stopover_config['show_stopover_atlas']:
         stopover_atlas.show(config={"scrollZoom": True, "displayModeBar": True})
     
-    exit(0)
-
     # 4. Phenology
     print("Computing migration phenology...")
     phenology_config = config["stage_phenology"]
