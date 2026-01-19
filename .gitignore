@@ -258,5 +258,6 @@ po/*~
 rsconnect/
 
 data/interim/*
+!data/interim/README.md
 
 renv.R

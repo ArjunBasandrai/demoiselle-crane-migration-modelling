@@ -1,30 +1,32 @@
 stage_read:
   raw_data_path: "data/raw/Volga-Ural Interfluve, Russia/1000 Cranes. Russia. Volga-Ural Interfluve..csv"
-  stage_1_output_path: "data/interim/irregularly_sampled_data.csv"
+  irregularly_sampled_data_path: "data/interim/irregularly_sampled_data.csv"
   min_count: 1000
   max_latitude: 18.5
 
 stage_rw:
-  stage_2_output_path: "data/interim/regularly_sampled_data.csv"
+  regularly_sampled_data_path: "data/interim/regularly_sampled_data.csv"
   time_step_hours: 6
   gap_split_days: 7
   min_points: 20
 
 stage_stopover:
-  stage_3_sites_output_path: "data/interim/stopover_sites.csv"
-  stage_3_events_with_sites_output_path: "data/interim/stopover_events.csv"
-  stage_3_site_contributors_output_path: "data/interim/site_contributors.csv"
-  stage_3_stopover_map_output_path: "outputs/stopover_atlas.html"
+  stopover_sites_output_path: "outputs/stopover/stopover_sites.csv"
+  stopover_events_output_path: "outputs/stopover/stopover_events.csv"
+  site_contributors_output_path: "outputs/stopover/site_contributors.csv"
+  stopover_atlas_path: "outputs/stopover/stopover_atlas.html"
   r_stop_km: 10.0
   min_stop_hours: 48.0
   site_eps_km: 20
   min_samples: 2
 
+  show_stopover_atlas: false
+
 stage_phenology:
   plots_out_dir: "outputs/phenology"
-  stage_4_migrations_output_path: "outputs/phenology/migrations.csv"
-  stage_4_individuals_output_path: "outputs/phenology/individuals_summary.csv"
-  stage_4_population_output_path: "outputs/phenology/population_summary.csv"
+  migration_summary_output_path: "outputs/phenology/migration_summary.csv"
+  individuals_summary_output_path: "outputs/phenology/individuals_summary.csv"
+  population_summary_output_path: "outputs/phenology/population_summary.csv"
 
   hull_margin_km: 50.0
   winter_months: [12, 1, 2]
@@ -46,7 +48,7 @@ stage_phenology:
   max_points_scatter: 20000
 
 stage_corridor:
-  stage_4_migration_only_output_path: "data/interim/irregularly_sampled_migration_only_data.csv"
+  irregularly_sampled_migration_only_data_path: "data/interim/irregularly_sampled_migration_only_data.csv"
   spring_migration_start_month: 3
   spring_migration_end_month: 6
   fall_migration_start_month: 8
@@ -60,6 +62,6 @@ stage_corridor:
   margin: 11
   time_step_mins: 60
   max_points_plot: 200000
-  out_html: "outputs/corridors.html"
-  out_gj95: "outputs/corridor_95.geojson"
-  out_gj50: "outputs/corridor_50.geojson"
+  corridors_path: "outputs/corridors/corridors.html"
+  corridor_95_output_path: "outputs/corridors/corridor_95.geojson"
+  corridor_50_output_path: "outputs/corridors/corridor_50.geojson"

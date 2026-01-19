@@ -32,7 +32,7 @@ write_tmp <- function(r) {
 }
 
 cat('Segmenting data...\n')
-input_path <- dbmm_config$stage_4_migration_only_output_path
+input_path <- dbmm_config$irregularly_sampled_migration_only_data_path
 
 gap_split_days <- config_data$stage_rw$gap_split_days
 min_points <- config_data$stage_rw$min_points
@@ -335,9 +335,9 @@ make_file_path <- function(path) {
   file.path(path)
 }
 
-out_html  <- make_file_path(dbmm_config$out_html)
-out_gj95  <- make_file_path(dbmm_config$out_gj95)
-out_gj50  <- make_file_path(dbmm_config$out_gj50)
+corridors_path  <- make_file_path(dbmm_config$corridors_path)
+corridor_95_output_path  <- make_file_path(dbmm_config$corridor_95_output_path)
+corridor_50_output_path  <- make_file_path(dbmm_config$corridor_50_output_path)
 
 max_points_plot <- dbmm_config$max_points_plot
 
@@ -350,8 +350,8 @@ poly50_ll <- sf::st_cast(poly50_ll, "MULTIPOLYGON", warn = FALSE)
 poly95_ll <- sf::st_sf(geometry = sf::st_union(poly95_ll))
 poly50_ll <- sf::st_sf(geometry = sf::st_union(poly50_ll))
 
-sf::st_write(poly95_ll, out_gj95, driver = "GeoJSON", delete_dsn = TRUE, quiet = TRUE)
-sf::st_write(poly50_ll, out_gj50, driver = "GeoJSON", delete_dsn = TRUE, quiet = TRUE)
+sf::st_write(poly95_ll, corridor_95_output_path, driver = "GeoJSON", delete_dsn = TRUE, quiet = TRUE)
+sf::st_write(poly50_ll, corridor_50_output_path, driver = "GeoJSON", delete_dsn = TRUE, quiet = TRUE)
 
 estimate_zoom <- function(lat, lon) {
   lat <- lat[is.finite(lat)]
@@ -466,20 +466,20 @@ fig <- fig %>% layout(
   )
 )
 
-out_dir <- dirname(out_html)
+out_dir <- dirname(corridors_path)
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 old <- getwd()
 setwd(out_dir)
 
-htmlwidgets::saveWidget(fig, basename(out_html), selfcontained = TRUE)
+htmlwidgets::saveWidget(fig, basename(corridors_path), selfcontained = TRUE)
 
 setwd(old)
 
 cat("Saved:\n")
-cat("  HTML  :", out_html, "\n")
-cat("  Geo95 :", out_gj95, "\n")
-cat("  Geo50 :", out_gj50, "\n")
+cat("  HTML  :", corridors_path, "\n")
+cat("  Geo95 :", corridor_95_output_path, "\n")
+cat("  Geo50 :", corridor_50_output_path, "\n")
 
 if (dir.exists(r_tmp)) {
   n_files <- length(list.files(r_tmp, recursive = TRUE, all.files = TRUE, no.. = TRUE))

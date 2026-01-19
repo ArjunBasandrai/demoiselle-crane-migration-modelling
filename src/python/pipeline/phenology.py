@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Callable, Any
 
 import matplotlib
-# matplotlib.use("Agg")
+matplotlib.use("Agg")
 
 from shapely.geometry import MultiPoint, Point
 from shapely.ops import transform

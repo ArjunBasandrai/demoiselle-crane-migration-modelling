@@ -18,8 +18,8 @@ library(ggplot2)
 
 # Config + data load
 config_data  <- read_yaml("configs/project.yaml")
-dataset_path <- config_data$stage_read$stage_1_output_path
-save_path    <- config_data$stage_rw$stage_2_output_path
+dataset_path <- config_data$stage_read$irregularly_sampled_data_path
+save_path    <- config_data$stage_rw$regularly_sampled_data_path
 
 seed <- config_data$stage_rw$seed %||% 123
 set.seed(seed)

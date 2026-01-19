@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -259,6 +260,10 @@ def extract_stopover_sites(
     )
 
     sites_contributors_df = build_sites_contributors_df(df, events_with_sites_df, sites_df)
+
+    Path(stopover_events_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(stopover_sites_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(stopover_sites_contributors_path).parent.mkdir(parents=True, exist_ok=True)
 
     events_with_sites_df.to_csv(stopover_events_path, index=False)
     sites_df.to_csv(stopover_sites_path, index=False)
